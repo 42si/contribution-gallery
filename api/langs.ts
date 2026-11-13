@@ -14,7 +14,7 @@ import { UserStats } from "../src/types";
 
 const STATS_URL =
   process.env.STATS_URL ??
-  "https://raw.githubusercontent.com/crosscore/contribution-gallery/main/docs/stats.json";
+  "https://raw.githubusercontent.com/42si/contribution-gallery/main/docs/stats.json";
 
 /** Warm-invocation cache; raw.githubusercontent itself caches ~5 min */
 const STATS_TTL_MS = 5 * 60 * 1000;

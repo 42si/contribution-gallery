@@ -51,7 +51,7 @@ Or via CLI: `npx tsx src/cli.ts --user <name> --mode ambient [--dark]`
 
 A committed SVG is static, so its scene order only changes when it is regenerated. For a freshly shuffled order on **every page load**, deploy the included Vercel function and point your README at it:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fcrosscore%2Fcontribution-gallery)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2F42si%2Fcontribution-gallery)
 
 - `GET /api/ambient` — light theme
 - `GET /api/ambient?theme=dark` — dark theme
@@ -101,7 +101,7 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - uses: crosscore/contribution-gallery@v1
+      - uses: 42si/contribution-gallery@v1
         with:
           github_user_name: ${{ github.repository_owner }}
           outputs: |
