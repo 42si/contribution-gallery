@@ -1,9 +1,13 @@
 import { UserStats } from "../types";
 import { DEFAULT_NUMERAL_FONT, NumeralFont } from "./numerals";
-import { CARD_WIDTH, cardSvg, galleryTheme, number, numberSize } from "./theme";
+import { mix } from "./scenes/kit";
+import { CARD_WIDTH, cardHeader, cardSvg, GalleryTheme, galleryTheme, number, numberSize, PAD } from "./theme";
+import { CARD_TITLES } from "./titles";
 
 const RANKS = ["SSS", "SS", "S", "AAA", "AA", "A", "B", "C"] as const;
-const TROPHY = [".1111111.", "2.11111.2", ".2111112.", "..11111..", "....1....", "...111...", "..11111.."];
+/** "1" body, "2" handles, "3" the lit edge of the bowl */
+const CUP = [".3111111.", "2.31111.2", ".2311112.", "..31111..", "....1....", "...111...", "..31111.."];
+const PITCH = 5;
 
 interface Category { title: string; value: number; thresholds: number[]; }
 
@@ -19,37 +23,60 @@ function categories(stats: UserStats): Category[] {
   ];
 }
 
-/** Pixel trophies retain their color and glint, with more space around each badge. */
+/** Gold for the S ranks, silver for A, bronze for B, a first green shoot for C */
+function metal(rank: number, theme: GalleryTheme): string {
+  if (rank < 0) return theme.faint;
+  if (rank <= 2) return theme.dark ? "#f2c350" : "#b07a10";
+  if (rank <= 5) return theme.dark ? "#c3cede" : "#66768a";
+  if (rank === 6) return theme.dark ? "#e19a6c" : "#ad5f2c";
+  return theme.greens[2];
+}
+
+/**
+ * Seven pixel cups, cast in the metal of their rank. Light crosses them one
+ * after another, and each names the next rank within reach.
+ */
 export function renderTrophySVG(stats: UserStats, dark: boolean, font: NumeralFont = DEFAULT_NUMERAL_FONT): string {
   const theme = galleryTheme(dark);
-  const cats = categories(stats);
+  const cats = categories(stats).map((cat) => ({ ...cat, rank: cat.thresholds.findIndex(threshold => cat.value >= threshold) }));
+  const column = (CARD_WIDTH - PAD * 2) / cats.length;
   const badges = cats.map((cat, i) => {
-    const rank = cat.thresholds.findIndex(threshold => cat.value >= threshold);
+    const { rank } = cat;
     const label = rank < 0 ? "—" : RANKS[rank];
-    const color = rank < 0 ? theme.muted : rank <= 2 ? theme.warm : rank <= 5 ? theme.cool : rank === 6 ? dark ? '#70c9ff' : '#0969da' : theme.accent;
-    const center = 24 + (i + .5) * (705 / 7);
-    const cup = TROPHY.flatMap((row, y) => [...row].map((cell, x) => cell === "." ? "" :
-      `<rect x="${center - 19.75 + x * 4.5}" y="${49 + y * 4.5}" width="3.5" height="3.5" rx=".9" fill="${color}"${cell === "2" ? ' opacity=".5"' : ""}/>
-      ${rank >= 0 ? `<rect class="trophy-glint" x="${center - 19.75 + x * 4.5}" y="${49 + y * 4.5}" width="3.5" height="3.5" rx=".9" fill="#ffffff" style="animation-delay:-${(i * .7 + x * .09 + y * .025).toFixed(3)}s"/>` : ""}`
+    const color = metal(rank, theme);
+    const tones: Record<string, string> = {
+      "1": color,
+      "2": mix(color, theme.background, 0.5),
+      "3": mix(color, theme.dark ? "#ffffff" : theme.background, theme.dark ? 0.45 : 0.3),
+    };
+    const x = PAD + i * column;
+    const cup = CUP.flatMap((line, row) => [...line].map((tone, col) => tone === "." ? "" :
+      `<use href="#cup" x="${x + col * PITCH}" y="${60 + row * PITCH}" fill="${tones[tone]}"${rank >= 0 ? ` class="shine d${col + row}"` : ""}/>`
     )).join("");
+    const next = rank < 0 ? cat.thresholds[cat.thresholds.length - 1] : cat.thresholds[rank - 1];
+    const ahead = rank === 0 ? "Top rank" : `${RANKS[rank < 0 ? RANKS.length - 1 : rank - 1]} at ${number(next)}`;
     const value = number(cat.value);
-    return `<g><title>${cat.title}: ${value}, rank ${rank < 0 ? "unranked" : label}</title>
-      ${i > 0 ? `<path d="M${center - 50.36} 62V153" stroke="${theme.border}"/>` : ""}
+    return `<g${rank >= 0 ? ` style="--t:${(i * 0.5 - 8).toFixed(1)}s"` : ""}><title>${cat.title}: ${value}, rank ${rank < 0 ? "unranked" : label}</title>
       ${cup}
-      ${rank >= 0 && rank <= 2 ? `<path class="sparkle" d="M${center - 26} 49v6m-3-3h6M${center + 26} 71v5m-2.5-2.5h5" stroke="${color}" stroke-linecap="round" style="animation-delay:-${i * .4}s"/>` : ""}
-      <text x="${center}" y="98" text-anchor="middle" font-size="10" font-weight="600" letter-spacing="1" fill="${color}">${label}</text>
-      <text class="number" x="${center}" y="126" text-anchor="middle" font-size="${numberSize(value, 21, 86)}">${value}</text>
-      <text class="detail" x="${center}" y="146" text-anchor="middle">${cat.title}</text>
+      ${rank >= 0 && rank <= 2 ? [[51, 62], [57, 81]].map(([dx, y], k) => `<rect class="spark" x="${(x + dx).toFixed(1)}" y="${y}" width="3" height="3" rx=".8" fill="${tones["3"]}" style="animation-delay:-${(i * 0.6 + k * 1.3).toFixed(1)}s"/>`).join("") : ""}
+      <text x="${x.toFixed(1)}" y="112" font-size="11" font-weight="600" letter-spacing=".6" style="fill:${color}">${label}</text>
+      <text class="number" x="${x.toFixed(1)}" y="136" font-size="${numberSize(value, 20, column - 14).toFixed(1)}">${value}</text>
+      <text class="label" x="${x.toFixed(1)}" y="154">${cat.title}</text>
+      <text class="detail" x="${x.toFixed(1)}" y="170">${ahead}</text>
     </g>`;
   }).join("\n");
 
-  return cardSvg("GitHub milestones", cats.map(cat => {
-    const rank = cat.thresholds.findIndex(t => cat.value >= t);
-    return `${cat.title}: ${number(cat.value)}, ${RANKS[rank] ?? "unranked"}`;
-  }).join(". "), CARD_WIDTH, 169, theme, `
-    <text class="eyebrow" x="24" y="30">MILESTONES</text>
-    <text class="detail" x="729" y="30" text-anchor="end">Seven milestones. Always growing.</text>
-    ${badges}`, `.trophy-glint{opacity:0;animation:trophy-glint 7s linear infinite}@keyframes trophy-glint{0%,6%,15%,100%{opacity:0}10%{opacity:.65}}
-      .sparkle{animation:sparkle 3.6s ease-in-out infinite}@keyframes sparkle{0%,100%{opacity:.12}50%{opacity:.9}}
-      @media(prefers-reduced-motion:reduce){.trophy-glint{display:none}.sparkle{animation:none;opacity:.5}}`, font);
+  return cardSvg({
+    label: "GitHub milestones",
+    description: cats.map(cat => `${cat.title}: ${number(cat.value)}, ${RANKS[cat.rank] ?? "unranked"}`).join(". "),
+    width: CARD_WIDTH, height: 194, theme, subset: "trophy", font,
+    css: `.shine{animation:shine 8s ease-in-out infinite;animation-delay:calc(var(--t) + var(--d))}
+    ${Array.from({ length: 15 }, (_, d) => `.d${d}{--d:${(d * 0.07).toFixed(2)}s}`).join("")}
+    @keyframes shine{0%,88%,100%{opacity:.8}94%{opacity:1}}
+    .spark{animation:spark 3.9s ease-in-out infinite}@keyframes spark{0%,100%{opacity:0}50%{opacity:.95}}
+    @media(prefers-reduced-motion:reduce){.shine{animation:none}.spark{animation:none;opacity:.6}}`,
+    body: `${cardHeader(CARD_TITLES.trophy, "ranked from C up to SSS", CARD_WIDTH)}
+    <defs><rect id="cup" width="3.9" height="3.9" rx=".95"/></defs>
+    ${badges}`,
+  });
 }

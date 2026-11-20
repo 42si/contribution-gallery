@@ -10,7 +10,7 @@
   <img src="docs/ambient-dark.svg" alt="Ten animated scenes playing across a GitHub contribution graph" width="753" />
 </picture>
 
-Ten ambient scenes. Colorful pixel cards. Your work, in motion.
+Ten ambient scenes and four profile cards, all drawn in contribution cells.
 
 [![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -33,9 +33,9 @@ Ten scenes play across your contribution graph, one every 15 seconds on a single
 | 🎆 Fireworks | Your biggest weeks are launched into the night — rockets climb, pixel sparks burst outward and fall, and a three-shell finale closes the show |
 | 💧 Ripples | Rain falls on the days you showed up, and every drop sends rings spreading across the year |
 
-Every scene draws from one spectrum — mint, sky, indigo, violet, pink and a single warm amber — tuned separately for light and dark cards, and a blurred copy of the scene layer gives every lit cell a soft bloom at no extra file size. The real graph always stays underneath: each scene dims it with its own veil rather than replacing it, so your year remains readable through every animation. The header shows the date range and your active days, the graph reveals itself column by column on load, scenes crossfade with eased envelopes while a band of light in the incoming scene's hue sweeps across the year, and a gallery placard plus a segmented progress bar name the scene that is playing.
+Every scene draws from one spectrum — mint, sky, indigo, violet, pink and a single warm amber — tuned separately for light and dark cards, and a blurred copy of the scene layer gives every lit cell a soft bloom at no extra file size. The real graph always stays underneath: each scene dims it with its own veil rather than replacing it, so your year remains readable through every animation. The card is labelled like a piece on a gallery wall: its heading is the scene now playing, set in Fraunces Italic above a one-line caption, and a soft glow behind it takes that scene's hue. The date range and your active days sit to the right. The graph reveals itself column by column on load, scenes crossfade with eased envelopes while a band of light in the incoming scene's hue sweeps across the year, and the footer carries the graph's own Less–More legend beside a row of ten cells that fill, one per scene, in each scene's hue.
 
-Story scenes (Pathfinder, Sort, Pong, Constellation, Life, Fireworks) are scripted in SMIL on the shared cycle and rest at their first frame outside their window, so every crossfade starts cleanly. Continuous scenes are compact CSS keyframe loops where each cell only carries a phase offset, or a few vector shapes (Aurora's curtains, Ripples' rings) seen through the cell lattice as a mask. Scenes off stage stop painting, so only the one or two on screen cost anything to draw. The scene order is shuffled on every render, and so are the details — the maze, the rally, the star picks, the shells, the plasma field — while the file stays around 350–400 KB.
+Story scenes (Pathfinder, Sort, Pong, Constellation, Life, Fireworks) are scripted in SMIL on the shared cycle and rest at their first frame outside their window, so every crossfade starts cleanly. Continuous scenes are compact CSS keyframe loops where each cell only carries a phase offset, or a few vector shapes (Aurora's curtains, Ripples' rings) seen through the cell lattice as a mask. Scenes off stage stop painting, so only the one or two on screen cost anything to draw. The scene order is shuffled on every render, and so are the details — the maze, the rally, the star picks, the shells, the plasma field — while the file stays around 370–420 KB.
 
 Enable it with `?mode=ambient` in the action outputs:
 
@@ -68,20 +68,22 @@ The endpoint renders the SVG with a random seed per request and sends `Cache-Con
 
 ### 📊 Profile cards (stats, langs, streak, trophy)
 
-Four endpoints share a dark-first visual system: fine borders, consistent spacing, clear typography, and colorful animated pixels.
+Four endpoints share one idea with the gallery: the picture is drawn in contribution cells — the same rounded square, on the same seven-row lattice, as the graph — and the words around it are set quietly, like a wall label. Each title is in Fraunces Italic; everything else stays out of the way.
 
 | Endpoint | Card |
 |----------|------|
-| `/api/stats` | A prominent commit total and four supporting metrics with shimmering pixel icons |
-| `/api/langs` | Language-colored cell bars with a traveling shimmer and exact byte-share percentages |
-| `/api/streak` | All-time contributions, current and longest streaks, and a glowing pixel flame |
-| `/api/trophy` | Seven ranked pixel trophies with glints and S-tier sparkles |
+| `/api/stats` | **Activity** — the commit total written into a strip of graph, cell by cell, above stars, pull requests, issues and followers |
+| `/api/langs` | **Languages** — a contribution graph painted by language, where each language's area is its share of code and each takes the light in turn |
+| `/api/streak` | **Streak** — the current streak burning in cells beside a pixel flame, with the longest streak and all-time contributions |
+| `/api/trophy` | **Milestones** — seven pixel cups cast in the metal of their rank, each naming the next rank within reach |
 
 Use `?theme=dark` for the dark palette; the default API palette remains light for existing embeds. The ambient, streak, and trophy cards are 753px wide. The stats and languages cards are 375 × 256px; embed each at `width="369"` to fit them side by side with a small gap, and let them wrap on narrow screens. All images have self-contained SVG/CSS animations, accessible descriptions, and reduced-motion fallbacks. The ten ambient scenes play in a freshly shuffled order on every render.
 
-Numbers come from [docs/stats.json](docs/stats.json), refreshed by CI every six hours. Language percentages describe the indexed language bytes in that snapshot; bars are linear relative to the largest language. No GitHub token is needed at request time.
+Numbers come from [docs/stats.json](docs/stats.json), refreshed by CI every six hours. Language percentages describe the indexed language bytes in that snapshot; the mosaic's 238 cells are shared out in proportion, and languages past the ninth are folded into one entry. No GitHub token is needed at request time.
 
-Profile numbers and language percentages use **Inter** by default. Choose `font=outfit` for rounder numerals, `font=space` for Space Grotesk, or `font=mono` for the original style; for example, `/api/stats?theme=dark&font=inter`. The three bundled typefaces embed only their numeric glyphs, so they render consistently without external font requests. Switch between all four styles in `npm run preview`. Font sources and licenses are in [src/renderer/fonts](src/renderer/fonts).
+Titles are set in **Fraunces Italic**. Each SVG embeds a subset holding only the letters of its own titles — 3–4 KB per card, 11 KB for the ambient card's ten scene names — so they render the same everywhere without a font request.
+
+Profile numbers and language percentages use **Inter** by default. Choose `font=outfit` for rounder numerals, `font=space` for Space Grotesk, or `font=mono` for the system monospace; for example, `/api/stats?theme=dark&font=inter`. The three bundled typefaces embed only their numeric glyphs. Switch between all four styles in `npm run preview`. Font sources and licenses are in [src/renderer/fonts](src/renderer/fonts).
 
 ## Quick Start
 
@@ -187,11 +189,14 @@ src/
 │   ├── animation.ts  # Keyframe animation engine (splatoon battle)
 │   ├── ambient.ts    # Ambient mode — assembles the ten scenes on one loop
 │   ├── scenes/       # One file per scene, plus the shared timeline kit
-│   ├── theme.ts      # Shared surfaces, typography and accessible SVG framing
-│   ├── stats.ts      # Stats card — pixel icons + gradient numbers
-│   ├── langs.ts      # Top languages card — cell bars in language colors
-│   ├── streak.ts     # Streak card — pixel flame + all-time streaks
-│   └── trophy.ts     # Trophy card — seven ranked pixel badges
+│   ├── theme.ts      # Shared palette, typography and accessible SVG framing
+│   ├── cells.ts      # Drawing in cells — 5 × 7 numerals, lattices, write-on
+│   ├── titles.ts     # Every string set in the display face
+│   ├── fonts/        # Embedded font subsets and their licenses
+│   ├── stats.ts      # Activity card — the commit total written in cells
+│   ├── langs.ts      # Languages card — a mosaic of cells by share of code
+│   ├── streak.ts     # Streak card — the streak burning in cells, with a flame
+│   └── trophy.ts     # Milestones card — seven pixel cups by rank
 ├── game/             # Game loop & territory logic
 │   ├── engine.ts     # Turn-based simulation + stagnation tracking
 │   ├── snake.ts      # Snake state & movement
@@ -219,4 +224,4 @@ npm run test       # Run tests
 
 ## License
 
-Code: MIT. Bundled numeric fonts: SIL Open Font License 1.1; see [font licenses](src/renderer/fonts).
+Code: MIT. Bundled fonts (Fraunces for titles; Inter, Outfit and Space Grotesk for numerals): SIL Open Font License 1.1; see [font licenses](src/renderer/fonts).

@@ -1,6 +1,13 @@
 import { UserStats } from "../types";
+import { latticeAcross, latticeDefs, latticeGround, ROWS } from "./cells";
 import { DEFAULT_NUMERAL_FONT, NumeralFont } from "./numerals";
-import { cardSvg, escapeXml, galleryTheme, HALF_HEIGHT, HALF_WIDTH } from "./theme";
+import { cardHeader, cardSvg, escapeXml, galleryTheme, HALF_HEIGHT, HALF_WIDTH, PAD } from "./theme";
+import { CARD_TITLES } from "./titles";
+
+const COLS = 34;
+const LISTED = 10;
+/** Seconds each language holds the light as the mosaic is read left to right */
+const TURN = 2.4;
 
 /** GitHub language colors, adjusted only when they disappear on the surface. */
 function visibleColor(color: string | null, dark: boolean, fallback: string): string {
@@ -14,33 +21,86 @@ function visibleColor(color: string | null, dark: boolean, fallback: string): st
     .toString(16).padStart(2, "0")).join("");
 }
 
-/** Cell bars use a linear scale relative to the leading language. */
+/**
+ * Share `cells` among `sizes` in proportion, by largest remainder, so the
+ * counts always add up; every non-empty share keeps at least one cell.
+ */
+export function apportion(sizes: number[], cells: number): number[] {
+  const total = sizes.reduce((sum, size) => sum + size, 0);
+  if (total <= 0) return sizes.map(() => 0);
+  const exact = sizes.map(size => size / total * cells);
+  const counts = exact.map(share => (share > 0 ? Math.max(1, Math.floor(share)) : 0));
+  const byRemainder = exact.map((share, i) => ({ i, rest: share - Math.floor(share) })).sort((a, b) => b.rest - a.rest);
+  for (let k = 0; counts.reduce((a, b) => a + b, 0) < cells; k++) counts[byRemainder[k % counts.length].i]++;
+  // Guaranteed minimums can overshoot; the largest share gives the cells back
+  while (counts.reduce((a, b) => a + b, 0) > cells) counts[counts.indexOf(Math.max(...counts))]--;
+  return counts;
+}
+
+/**
+ * The code is drawn as a contribution graph painted by language: cells fill
+ * week by week in order of size, so each language's area is its share.
+ */
 export function renderLangsSVG(stats: UserStats, dark: boolean, font: NumeralFont = DEFAULT_NUMERAL_FONT): string {
   const theme = galleryTheme(dark);
-  const languages = (stats.languages ?? []).filter(l => Number.isFinite(l.size) && l.size > 0);
-  const total = languages.reduce((sum, l) => sum + l.size, 0);
-  const shown = [...languages].sort((a, b) => b.size - a.size).slice(0, 8);
-  const max = shown[0]?.size ?? 1;
-  const rows = shown.map((lang, i) => {
-    const y = 82 + i * 20;
-    const name = lang.name.length > 18 ? `${lang.name.slice(0, 17)}…` : lang.name;
-    const color = visibleColor(lang.color, dark, theme.muted);
-    const filled = Math.max(1, Math.round(lang.size / max * 26));
-    const cells = Array.from({ length: 26 }, (_, col) =>
-      `<rect x="${148 + col * 5.5}" y="${y - 6}" width="4" height="5" rx="1" fill="${col < filled ? color : theme.inset}"${col < filled ? ` class="language-cell" style="animation-delay:-${(col * .1 + i * .3).toFixed(1)}s"` : ""}/>`
-    ).join("");
+  const all = (stats.languages ?? []).filter(l => Number.isFinite(l.size) && l.size > 0).sort((a, b) => b.size - a.size);
+  const total = all.reduce((sum, l) => sum + l.size, 0);
+  // Past the listed count, the tail is folded into one neutral entry
+  const head = all.length > LISTED ? all.slice(0, LISTED - 1) : all;
+  const tail = all.slice(head.length);
+  const shown = [...head.map(l => ({ name: l.name, size: l.size, color: visibleColor(l.color, dark, theme.muted) })),
+    ...(tail.length ? [{ name: `${tail.length} more`, size: tail.reduce((sum, l) => sum + l.size, 0), color: theme.faint }] : [])];
+  const percent = (size: number) => `${(size / total * 100).toFixed(1)}%`;
+
+  const lattice = latticeAcross(PAD, 60, HALF_WIDTH - PAD * 2, COLS);
+  const { pitch, cell } = lattice;
+  const gap = pitch - cell;
+  const block = (col: number, row: number, cols: number, rows: number) =>
+    `<rect x="${(lattice.x + col * pitch - gap / 2).toFixed(2)}" y="${(lattice.y + row * pitch - gap / 2).toFixed(2)}" width="${(cols * pitch).toFixed(2)}" height="${(rows * pitch).toFixed(2)}"/>`;
+  const cycle = shown.length * TURN;
+  const turn = (i: number) => `style="animation-delay:${(i * TURN - cycle).toFixed(1)}s"`;
+
+  // Cells run down each column, then on to the next, like days into weeks
+  let cursor = 0;
+  const areas = apportion(shown.map(l => l.size), COLS * ROWS).map((count, i) => {
+    const [first, last] = [cursor, cursor + count - 1];
+    cursor += count;
+    const [c0, r0, c1, r1] = [Math.floor(first / ROWS), first % ROWS, Math.floor(last / ROWS), last % ROWS];
+    const blocks = c0 === c1 ? [block(c0, r0, 1, r1 - r0 + 1)] : [
+      block(c0, r0, 1, ROWS - r0),
+      c1 - c0 > 1 ? block(c0 + 1, 0, c1 - c0 - 1, ROWS) : "",
+      block(c1, 0, 1, r1 + 1),
+    ];
+    return `<g class="share" data-language="${escapeXml(shown[i].name)}" data-cells="${count}" fill="${shown[i].color}" ${turn(i)}>${blocks.join("")}</g>`;
+  }).join("");
+
+  const half = (HALF_WIDTH - PAD * 2 - 20) / 2;
+  const rowsPerColumn = Math.ceil(shown.length / 2);
+  const legend = shown.map((lang, i) => {
+    const x = PAD + Math.floor(i / rowsPerColumn) * (half + 20);
+    const y = 153 + (i % rowsPerColumn) * 20;
+    const name = lang.name.length > 17 ? `${lang.name.slice(0, 16)}…` : lang.name;
     return `<g><title>${escapeXml(lang.name)}</title>
-      <text x="24" y="${y}" font-size="11.5" fill="${theme.text}">${escapeXml(name)}</text>
-      ${cells}
-      <text class="detail numeric-detail" x="351" y="${y}" text-anchor="end" style="font-variant-numeric:tabular-nums">${(lang.size / total * 100).toFixed(1)}%</text>
+      <rect class="swatch" x="${x}" y="${y - 8.5}" width="8" height="8" rx="2" fill="${lang.color}" ${turn(i)}/>
+      <text class="detail numeric-detail" x="${x + 50}" y="${y}" text-anchor="end">${percent(lang.size)}</text>
+      <text x="${x + 58}" y="${y}" font-size="12">${escapeXml(name)}</text>
     </g>`;
   }).join("\n");
-  const summary = shown.length ? shown.map(l => `${l.name} ${(l.size / total * 100).toFixed(1)}%`).join(", ") : "No language data yet";
+  const summary = shown.length ? shown.map(l => `${l.name} ${percent(l.size)}`).join(", ") : "No language data yet";
+  // Each language is bright for its turn, then steps back while the others take theirs
+  const lit = (100 / Math.max(shown.length, 1));
 
-  return cardSvg("Language composition", `${summary}. Shares of indexed code by byte size.`, HALF_WIDTH, HALF_HEIGHT, theme, `
-    <text class="eyebrow" x="24" y="29">CODE COMPOSITION</text>
-    <text class="heading" x="24" y="54">Top Languages</text>
-    ${shown.slice(0, 4).map((lang, i) => `<rect x="${334 + (i % 2) * 9}" y="${28 + Math.floor(i / 2) * 9}" width="6" height="6" rx="1.5" fill="${visibleColor(lang.color, dark, theme.muted)}"/>`).join("")}
-    ${rows || `<text class="label" x="24" y="123">No language data yet.</text>`}
-    <text class="detail" x="24" y="243">Relative bars · % of indexed code</text>`, `.language-cell{animation:language-wave 4.8s ease-in-out infinite}@keyframes language-wave{0%,60%,100%{opacity:.78}80%{opacity:1}}@media(prefers-reduced-motion:reduce){.language-cell{animation:none}}`, font);
+  return cardSvg({
+    label: "Language composition",
+    description: `${summary}. Shares of indexed code by byte size.`,
+    width: HALF_WIDTH, height: HALF_HEIGHT, theme, subset: "langs", font,
+    css: `.share{animation:turn ${cycle.toFixed(1)}s ease-in-out infinite}.swatch{animation:turn ${cycle.toFixed(1)}s ease-in-out infinite}
+    @keyframes turn{0%,${(lit * .85).toFixed(1)}%{opacity:1}${(lit * 1.5).toFixed(1)}%,${(100 - lit * .5).toFixed(1)}%{opacity:.6}100%{opacity:1}}
+    @media(prefers-reduced-motion:reduce){.share,.swatch{animation:none}}`,
+    body: `${cardHeader(CARD_TITLES.langs, "share of code, by size", HALF_WIDTH)}
+    <defs>${latticeDefs("cell", lattice, shown.length ? "#fff" : theme.inset)}
+      <mask id="mosaic" maskUnits="userSpaceOnUse" x="${lattice.x}" y="${lattice.y}" width="${lattice.width}" height="${lattice.height.toFixed(2)}">${latticeGround("cell", lattice)}</mask></defs>
+    ${shown.length ? `<g mask="url(#mosaic)">${areas}</g>${legend}`
+      : `${latticeGround("cell", lattice)}<text class="label" x="${PAD}" y="153">No language data yet.</text>`}`,
+  });
 }
