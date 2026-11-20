@@ -1,5 +1,6 @@
 import { Grid, RenderConfig, DEFAULT_RENDER_CONFIG } from "../types";
-import { cardSurface, galleryCss, galleryTheme, GalleryTheme } from "./theme";
+import { cardSurface, escapeXml, fontLicenses, galleryCss, galleryTheme, GalleryTheme, PAD } from "./theme";
+import { STILL_TITLE } from "./titles";
 import {
   DARK_SPECTRUM,
   LIGHT_SPECTRUM,
@@ -26,9 +27,10 @@ import {
  *
  * Timeline: SCENES.length × SCENE_SECONDS on one master cycle. Scene groups
  * crossfade with eased SMIL opacity envelopes while a band of light in the
- * incoming scene's hue sweeps across the year, a placard names each piece,
- * and a segmented progress bar fills in each scene's signature hue. The
- * scene order and every random detail are shuffled by `seed`.
+ * incoming scene's hue sweeps across the year. The card's heading is the
+ * piece now playing, a glow behind it takes that piece's hue, and a row of
+ * cells in the footer lights one cell per scene. The scene order and every
+ * random detail are shuffled by `seed`.
  *
  * Constraint reminder: this SVG is served through GitHub's camo proxy
  * inside an <img>, so only SMIL/CSS animations work — no JS, no external
@@ -37,7 +39,9 @@ import {
 
 const FADE_SECONDS = 2.2;
 const SWEEP_SECONDS = 1.8;
-const LABEL_FADE = 0.35;
+/** A heading leaves before the next one arrives, so two never overlap */
+const TITLE_IN = 0.7;
+const TITLE_OUT = 0.45;
 const MARGIN = 7;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -109,17 +113,17 @@ function monthLabels(grid: Grid, cellX: (x: number) => number, y: number): strin
     .join("");
 }
 
-/** "SEP 2025 — AUG 2026" from the first and last week, when the grid carries dates */
+/** "Sep 2025 – Aug 2026" from the first and last week, when the grid carries dates */
 function dateRange(grid: Grid): string {
   const starts = grid.weekStarts;
   if (!starts?.length) return "";
   const label = (date: string | undefined) => {
     const month = MONTHS[Number(date?.slice(5, 7)) - 1];
-    return month && date ? `${month.toUpperCase()} ${date.slice(0, 4)}` : "";
+    return month && date ? `${month} ${date.slice(0, 4)}` : "";
   };
   const first = label(starts[0]);
   const last = label(starts[starts.length - 1]);
-  return first && last ? `${first} — ${last}` : "";
+  return first && last ? `${first} – ${last}` : "";
 }
 
 /**
@@ -154,7 +158,32 @@ function sweepMotion(i: number, from: number, to: number, cycle: number): string
     `<animate attributeName="visibility" values="${shown[0]}" keyTimes="${shown[1]}" calcMode="discrete" dur="${cycle}s" repeatCount="indefinite"/>`;
 }
 
-/** Segment width tween: empty until its window, full after it, reset at the cycle start */
+/** A scene's heading: fades in at the start of its window and out just before the end */
+function titlePoints(i: number, cycle: number): [number, number][] {
+  const t0 = i * SCENE_SECONDS;
+  const t1 = t0 + SCENE_SECONDS;
+  const points: [number, number][] = [[t0, 0], [t0 + TITLE_IN, 1], [t1 - TITLE_OUT, 1], [t1, 0]];
+  if (t0 > 0) points.unshift([0, 0]);
+  if (t1 < cycle) points.push([cycle, 0]);
+  return points;
+}
+
+/** The heading settles upward a few pixels as it fades in */
+function titleRise(i: number, cycle: number): string {
+  const t0 = i * SCENE_SECONDS;
+  const points = t0 > 0 ? [[0, 5], [t0, 5], [t0 + TITLE_IN, 0], [cycle, 0]] : [[0, 5], [TITLE_IN, 0], [cycle, 0]];
+  const splines = points.slice(1).map((p, k) => (p[1] === points[k][1] ? "0 0 1 1" : ".2 .7 .2 1")).join(";");
+  return `<animateTransform attributeName="transform" type="translate" values="${points.map((p) => `0 ${p[1]}`).join(";")}" keyTimes="${points.map((p) => frac(p[0], cycle)).join(";")}" keySplines="${splines}" calcMode="spline" dur="${cycle}s" repeatCount="indefinite"/>`;
+}
+
+/** Stop colour of the glow: each scene's hue, changing with the crossfade */
+function hueShift(hues: string[], cycle: number): string {
+  const points = hues.flatMap((hue, i): [number, string][] => [[i * SCENE_SECONDS, hue], [(i + 1) * SCENE_SECONDS - FADE_SECONDS, hue]]);
+  points.push([cycle, hues[0]]);
+  return `<animate attributeName="stop-color" values="${points.map((p) => p[1]).join(";")}" keyTimes="${points.map((p) => frac(p[0], cycle)).join(";")}" dur="${cycle}s" repeatCount="indefinite"/>`;
+}
+
+/** Cell width tween: empty until its window, full after it, reset at the cycle start */
 function progressFill(i: number, count: number, width: number, cycle: number): string {
   const t0 = frac(i * SCENE_SECONDS, cycle);
   const t1 = frac((i + 1) * SCENE_SECONDS, cycle);
@@ -185,13 +214,12 @@ export function renderAmbientSVG(
   const svgHeight = grid.height * step - cellGap + MARGIN * 2;
   const graphWidth = svgWidth - MARGIN * 2;
   const graphHeight = svgHeight - MARGIN * 2;
-  const scale = (svgWidth - 48) / graphWidth;
-  const months = monthLabels(grid, (x) => Math.round((24 + x * step * scale) * 10) / 10, 86);
-  const graphY = months ? 99 : 88;
-  const cardHeight = Math.ceil(graphY + graphHeight * scale + 45);
-  const footerY = cardHeight - 19;
+  const scale = (svgWidth - PAD * 2) / graphWidth;
+  const months = monthLabels(grid, (x) => Math.round((PAD + x * step * scale) * 10) / 10, 90);
+  const graphY = months ? 102 : 88;
+  const cardHeight = Math.ceil(graphY + graphHeight * scale + 48);
+  const footerY = cardHeight - 21;
   const cycle = SCENES.length * SCENE_SECONDS;
-  const spectrum = [colors.mint, colors.sky, colors.violet];
   // Light glows read as haze on a white card, so the bloom is tighter and fainter there
   const bloom = config.darkMode ? { blur: 4, alpha: 1.5, opacity: 0.7 } : { blur: 3, alpha: 1.2, opacity: 0.4 };
 
@@ -218,14 +246,12 @@ export function renderAmbientSVG(
   }
 
   const cssBlocks: string[] = [
-    galleryCss(theme),
+    galleryCss(theme, "ambient"),
     `.c{width:${cellSize}px;height:${cellSize}px;rx:${cellRadius}px}` +
+      `.title{font-size:25px}` +
+      `.caption{font-size:12px;fill:${theme.muted}}` +
       `.month{font-size:9.5px;letter-spacing:.3px;fill:${theme.muted};opacity:.9}` +
-      `.stat{font-size:21px;font-weight:600;letter-spacing:-.5px;fill:${theme.text};font-variant-numeric:tabular-nums}` +
-      `.stat-label{font-size:11.5px;font-weight:400;letter-spacing:0;fill:${theme.muted}}` +
-      `.plate-no{font-size:10px;font-weight:700;letter-spacing:1.2px;font-variant-numeric:tabular-nums}` +
-      `.plate-title{font-size:12px;font-weight:600;fill:${theme.text}}` +
-      `.plate-caption{font-size:11px;fill:${theme.muted}}`,
+      `.stat{font-size:17px;font-weight:600;letter-spacing:-.3px;font-variant-numeric:tabular-nums}`,
   ];
 
   const windows = ordered.map((_, i) => {
@@ -233,7 +259,7 @@ export function renderAmbientSVG(
     const t1 = t0 + SCENE_SECONDS;
     return {
       scene: envelope(windowPoints([t0 - FADE_SECONDS, t0], [t1 - FADE_SECONDS, t1], cycle), cycle),
-      label: envelope(windowPoints([t0 - LABEL_FADE, t0 + LABEL_FADE], [t1 - LABEL_FADE, t1 + LABEL_FADE], cycle), cycle),
+      title: envelope(titlePoints(i, cycle), cycle) + titleRise(i, cycle),
     };
   });
 
@@ -278,42 +304,41 @@ export function renderAmbientSVG(
     `<rect x="${-sweepWidth}" y="0" width="${sweepWidth}" height="${svgHeight}" fill="url(#sweep-${i})" visibility="hidden">${sweepMotion(i, -sweepWidth, svgWidth, cycle)}</rect>`
   ).join("");
 
-  // Footer: a gallery placard per scene, and a progress bar whose segments
-  // fill in each scene's signature hue
-  const segment = { width: 13, gap: 3, height: 3 };
-  const barRight = svgWidth - 24;
-  const segX = (i: number) => barRight - (ordered.length - i) * segment.width - (ordered.length - 1 - i) * segment.gap;
-  const barY = footerY - 5;
-  const progress = ordered.map((scene, i) =>
-    `<rect x="${num(segX(i))}" y="${barY}" width="${segment.width}" height="${segment.height}" rx="1.5" fill="${theme.border}"/>` +
-    `<rect x="${num(segX(i))}" y="${barY}" width="0" height="${segment.height}" rx="1.5" fill="${colors[scene.hue]}">${progressFill(i, ordered.length, segment.width, cycle)}</rect>`
+  // Heading: the piece now playing, named like a wall label
+  const heading = (title: string, caption: string) =>
+    `<text class="title" x="${PAD}" y="43">${escapeXml(title)}</text><text class="caption" x="${PAD}" y="63">${escapeXml(caption)}</text>`;
+  const titles = ordered.map((scene, i) =>
+    `<g opacity="${i === 0 ? 1 : 0}">${windows[i].title}${heading(scene.title, scene.caption)}</g>`
   ).join("");
-  const plates = ordered.map((scene, i) =>
-    `<g opacity="${i === 0 ? 1 : 0}">${windows[i].label}` +
-    `<text x="24" y="${footerY}"><tspan class="plate-no" fill="${colors[scene.hue]}">${String(i + 1).padStart(2, "0")}</tspan>` +
-    `<tspan class="plate-title" dx="9">${scene.title}</tspan><tspan class="plate-caption" dx="8">${scene.caption}</tspan></text></g>`
-  ).join("");
+
+  // Footer: the graph's own legend, and one cell per scene that fills in
+  // the scene's hue while it plays
+  const right = svgWidth - PAD;
+  const legendX = PAD + 30;
   const legend = config.palette.contributionColors.map((color, i) =>
-    `<rect x="${barRight - 30 - (5 - i) * 13}" y="${footerY - 8.5}" width="10" height="10" rx="2" fill="${color}"/>`
+    `<rect x="${legendX + i * 13}" y="${footerY - 9}" width="10" height="10" rx="2.4" fill="${color}"/>`
   ).join("");
-  cssBlocks.push(`.still{display:none}@media(prefers-reduced-motion:reduce){.ambient-scenes,.scene-labels{display:none}.still{display:inline}.c{animation:none!important}}`);
+  const mark = { size: 8, gap: 4 };
+  const markX = (i: number) => right - (ordered.length - i) * mark.size - (ordered.length - 1 - i) * mark.gap;
+  const progress = ordered.map((scene, i) =>
+    `<rect x="${markX(i)}" y="${footerY - 8}" width="${mark.size}" height="${mark.size}" rx="2" fill="${config.palette.contributionColors[0]}"/>` +
+    `<rect x="${markX(i)}" y="${footerY - 8}" width="0" height="${mark.size}" rx="2" fill="${colors[scene.hue]}">${progressFill(i, ordered.length, mark.size, cycle)}</rect>`
+  ).join("");
+  cssBlocks.push(`.still{display:none}@media(prefers-reduced-motion:reduce){.live{display:none}.still{display:inline}.c{animation:none!important}}`);
 
   const range = dateRange(grid);
-  const heading = config.darkMode ? "#5865bc" : "#9db7ff";
+  const glow = config.darkMode ? ".15" : ".09";
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${cardHeight}" width="${svgWidth}" height="${cardHeight}" role="img" aria-labelledby="title description" data-design="gallery-v5">
-  <title id="title">A year, in motion — contribution gallery</title>
-  <desc id="description">Contribution graph ambient animation — ${ordered.map((s) => s.title).join(" → ")}, one scene every ${SCENE_SECONDS} seconds. ${activeDays} active days. Reduced motion shows the original contribution graph.</desc>
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${cardHeight}" width="${svgWidth}" height="${cardHeight}" role="img" aria-labelledby="title description" color="${theme.text}" data-design="gallery-v6">
+  <title id="title">${STILL_TITLE}</title>
+  <desc id="description">Contribution graph with an ambient animation — ${ordered.map((s) => s.title).join(" → ")}, one scene every ${SCENE_SECONDS} seconds. ${activeDays} active days. Reduced motion shows the original contribution graph.</desc>
+  <metadata id="font-license">${escapeXml(fontLicenses("mono"))}</metadata>
   <!-- generated by contribution-gallery ambient renderer (seed ${seed}) -->
   <style>${cssBlocks.join("\n")}</style>
   ${cardSurface(svgWidth, cardHeight, theme)}
   <defs>
-    <linearGradient id="spectrum" spreadMethod="reflect"><stop stop-color="${spectrum[0]}"/><stop offset=".5" stop-color="${spectrum[1]}"/><stop offset="1" stop-color="${spectrum[2]}"/>
-      <animateTransform attributeName="gradientTransform" type="translate" values="0 0;-.7 0;0 0" keyTimes="0;.5;1" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1" dur="19s" repeatCount="indefinite"/></linearGradient>
     ${sweepDefs}
-    <radialGradient id="atmosphere" cx="80%" cy="0%" r="90%"><stop stop-color="${heading}" stop-opacity=".16"/><stop offset="1" stop-color="${theme.background}" stop-opacity="0"/>
-      <animate attributeName="cx" values="80%;58%;80%" keyTimes="0;.5;1" keySplines=".45 0 .55 1;.45 0 .55 1" calcMode="spline" dur="46s" repeatCount="indefinite"/>
-    </radialGradient>
+    <radialGradient id="atmosphere" cx="10%" cy="0%" r="70%"><stop stop-color="${colors[ordered[0].hue]}" stop-opacity="${glow}">${hueShift(ordered.map((scene) => colors[scene.hue]), cycle)}</stop><stop offset="1" stop-color="${theme.background}" stop-opacity="0"/></radialGradient>
     <filter id="bloom" x="-2%" y="-12%" width="104%" height="124%" color-interpolation-filters="sRGB">
       <feGaussianBlur stdDeviation="${bloom.blur}"/>
       <feComponentTransfer><feFuncA type="linear" slope="${bloom.alpha}"/></feComponentTransfer>
@@ -321,24 +346,23 @@ export function renderAmbientSVG(
     <pattern id="cell-tile" patternUnits="userSpaceOnUse" x="${MARGIN}" y="${MARGIN}" width="${step}" height="${step}"><rect width="${cellSize}" height="${cellSize}" rx="${cellRadius}" fill="#fff"/></pattern>
     <mask id="cell-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${svgWidth}" height="${svgHeight}"><rect x="${MARGIN}" y="${MARGIN}" width="${graphWidth}" height="${graphHeight}" fill="url(#cell-tile)"/></mask>
   </defs>
-  <rect x="1" y="1" width="${svgWidth - 2}" height="${cardHeight - 2}" rx="14" fill="url(#atmosphere)"/>
-  <text class="eyebrow" x="24" y="29">CONTRIBUTION GALLERY</text>
-  <text class="heading" x="23" y="60" style="font-size:27px;letter-spacing:-.8px;fill:url(#spectrum)">A year, in motion.</text>
-  ${range ? `<text class="eyebrow" x="${svgWidth - 24}" y="29" text-anchor="end">${range}</text>` : ""}
-  <text x="${svgWidth - 24}" y="59" text-anchor="end"><tspan class="stat">${activeDays}</tspan><tspan class="stat-label" dx="6">active days</tspan></text>
+  <rect class="live" x="1" y="1" width="${svgWidth - 2}" height="${cardHeight - 2}" rx="14" fill="url(#atmosphere)"/>
+  <g class="scene-labels live">${titles}</g>
+  <g class="still">${heading(STILL_TITLE, `${grid.width} weeks, one cell for each day`)}</g>
+  <text x="${right}" y="43" text-anchor="end"><tspan class="stat">${activeDays}</tspan><tspan class="caption" dx="6">active days</tspan></text>
+  ${range ? `<text class="detail" x="${right}" y="63" text-anchor="end">${range}</text>` : ""}
   ${months}
-  <g transform="translate(${24 - MARGIN * scale},${graphY - MARGIN * scale}) scale(${scale})">
+  <g transform="translate(${PAD - MARGIN * scale},${graphY - MARGIN * scale}) scale(${scale})">
     <g>${columns.join("\n    ")}</g>
-    <g class="ambient-scenes">${reveal(0.5, 1.8)}
+    <g class="ambient-scenes live">${reveal(0.5, 1.8)}
     <g class="veils">${veils.join("\n    ")}</g>
     <use href="#scenes" filter="url(#bloom)" opacity="${num(bloom.opacity)}"/>
     <g id="scenes">${groups.join("\n")}
     <g mask="url(#cell-mask)">${sweeps}</g></g>
     </g>
   </g>
-  <g class="scene-labels">${plates}${progress}</g>
-  <g class="still"><text class="detail" x="24" y="${footerY}">${grid.width} weeks of contributions</text>
-  <text class="detail" x="${barRight - 30 - 5 * 13 - 6}" y="${footerY}" text-anchor="end">Less</text>${legend}<text class="detail" x="${barRight}" y="${footerY}" text-anchor="end">More</text></g>
+  <text class="detail" x="${PAD}" y="${footerY}">Less</text>${legend}<text class="detail" x="${legendX + 5 * 13 + 3}" y="${footerY}">More</text>
+  <g class="scene-labels live">${progress}</g>
 </svg>
 `;
 }

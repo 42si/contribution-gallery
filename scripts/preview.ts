@@ -6,6 +6,8 @@ import { renderLangsSVG } from "../src/renderer/langs";
 import { renderStreakSVG } from "../src/renderer/streak";
 import { renderTrophySVG } from "../src/renderer/trophy";
 import { NumeralFont, resolveNumeralFont } from "../src/renderer/numerals";
+import { displayCss, galleryTheme } from "../src/renderer/theme";
+import display from "../src/renderer/fonts/display.json";
 import { Grid, UserStats, DEFAULT_RENDER_CONFIG, DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE } from "../src/types";
 
 // Use the checked-in snapshot. Previewing and regenerating examples need no token.
@@ -52,14 +54,33 @@ if (process.argv.includes("--write")) {
       return;
     }
     const mode = dark ? "dark" : "light";
-    const img = (name: string) => `<img src="/api/${name}?theme=${mode}&amp;font=${font}" alt="${name} preview">`;
-    const choices = [["inter", "Inter"], ["outfit", "Outfit"], ["space", "Space Grotesk"], ["mono", "Original mono"]]
-      .map(([id, label]) => `<a href="/?theme=${mode}&amp;font=${id}"${font === id ? ' aria-current="true"' : ""}>${label}</a>`).join("");
+    const theme = galleryTheme(dark);
+    const img = (name: string) => `<img src="/api/${name}?theme=${mode}&amp;font=${font}" alt="${name} card">`;
+    const current = (on: boolean) => (on ? ' aria-current="true"' : "");
+    const choices = [["inter", "Inter"], ["outfit", "Outfit"], ["space", "Space Grotesk"], ["mono", "System mono"]]
+      .map(([id, label]) => `<a href="/?theme=${mode}&amp;font=${id}"${current(font === id)}>${label}</a>`).join("");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Contribution gallery · Preview</title>
-      <style>:root{color-scheme:${mode}}*{box-sizing:border-box}body{margin:0;background:${dark ? "#0d1117" : "#ffffff"};color:${dark ? "#9aadb9" : "#5d707c"};font:13px system-ui}header{max-width:801px;margin:32px auto 24px;padding:0 24px;display:flex;justify-content:space-between}a{color:inherit;text-decoration:none}nav{display:flex;gap:18px}main{max-width:801px;margin:auto;padding:0 24px 48px}.type-options{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:24px;font-size:12px}.type-options nav{gap:8px;flex-wrap:wrap}.type-options a{padding:7px 11px;border:1px solid ${dark ? "#293344" : "#dce5e8"};border-radius:7px}.type-options [aria-current]{color:${dark ? "#56e0bd" : "#16765f"};border-color:currentColor}article{display:flex;flex-direction:column;gap:12px}img{display:block;width:100%;height:auto}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}footer{margin:18px 0 32px;text-align:center;font-size:11px}details{margin-top:32px}summary{cursor:pointer;margin-bottom:16px}@media(max-width:540px){header,main{padding-left:16px;padding-right:16px}.pair{grid-template-columns:1fr}}</style></head>
-      <body><header><a href="/">CONTRIBUTION GALLERY</a><nav><a href="/?theme=dark&amp;font=${font}">Dark</a><a href="/?theme=light&amp;font=${font}">Light</a></nav></header>
-      <main><div class="type-options"><span>Numerals</span><nav aria-label="Numeric font">${choices}</nav></div><article>${img("ambient")}<div class="pair">${img("stats")}${img("langs")}</div>${img("streak")}${img("trophy")}</article>
-      <footer>Generated from the repository's saved contribution data.</footer></main></body></html>`);
+    res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Contribution gallery preview</title>
+      <style>${displayCss("ambient")}
+      :root{color-scheme:${mode}}*{box-sizing:border-box}
+      body{margin:0;background:${theme.background};color:${theme.muted};font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif}
+      header,main{max-width:801px;margin:0 auto;padding:0 24px}
+      header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-top:36px;padding-bottom:20px}
+      h1{margin:0;font:italic 500 26px 'Gallery ${display.family}',ui-serif,Georgia,serif;color:${theme.text}}
+      nav{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+      nav span{margin-right:8px}
+      a{color:inherit;text-decoration:none;padding:5px 10px;border-radius:7px}
+      a:hover{color:${theme.text}}
+      a:focus-visible{outline:2px solid ${theme.lit[0]};outline-offset:1px}
+      a[aria-current]{color:${theme.text};background:${theme.inset}}
+      .options{display:flex;justify-content:space-between;gap:8px 24px;flex-wrap:wrap;margin-bottom:20px}
+      article{display:flex;flex-direction:column;gap:12px}img{display:block;width:100%;height:auto}
+      .pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      footer{margin:20px 0 48px}
+      @media(max-width:540px){header,main{padding-left:16px;padding-right:16px}.pair{grid-template-columns:1fr}}</style></head>
+      <body><header><h1>Contribution gallery</h1><nav aria-label="Theme"><a href="/?theme=dark&amp;font=${font}"${current(dark)}>Dark</a><a href="/?theme=light&amp;font=${font}"${current(!dark)}>Light</a></nav></header>
+      <main><div class="options"><nav aria-label="Numerals"><span>Numerals</span>${choices}</nav></div>
+      <article>${img("ambient")}<div class="pair">${img("stats")}${img("langs")}</div>${img("streak")}${img("trophy")}</article>
+      <footer>Drawn from the contribution data saved in docs/. Each card is one self-contained SVG, as GitHub will serve it.</footer></main></body></html>`);
   }).listen(port, "127.0.0.1", () => console.log(`Gallery preview: http://127.0.0.1:${port}`));
 }

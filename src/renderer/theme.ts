@@ -1,26 +1,60 @@
+import display from "./fonts/display.json";
 import { NumeralFont, numeralCss, numeralLicense } from "./numerals";
+import { DARK_SPECTRUM, LIGHT_SPECTRUM, Spectrum } from "./scenes/kit";
+import { DisplaySubset } from "./titles";
 
-/** Shared visual language for self-contained GitHub profile SVGs. */
+/**
+ * Shared visual language for the gallery's self-contained SVGs.
+ *
+ * One idea runs through every card: the picture is drawn in contribution
+ * cells — the same rounded square on a seven-row lattice as the graph —
+ * and the words around it are set quietly, like a wall label. Titles are
+ * the one place the type speaks up, in an italic serif.
+ */
 export const CARD_WIDTH = 753;
 export const HALF_WIDTH = 375;
 export const HALF_HEIGHT = 256;
+/** Left and right padding shared by every card */
+export const PAD = 24;
 
 export interface GalleryTheme {
-  background: string; inset: string; border: string; text: string;
-  muted: string; accent: string; accentSoft: string; warm: string; cool: string;
+  dark: boolean;
+  /** The host page's canvas, so a card sits flush in a README */
+  background: string;
+  /** An unlit cell */
+  inset: string;
+  border: string;
+  text: string;
+  muted: string;
+  /** Tertiary marks only; too quiet for small text */
+  faint: string;
+  /** Contribution greens, quietest first */
+  greens: [string, string, string, string];
+  /** Cell numerals lit in green: top row to bottom row */
+  lit: [string, string];
+  /** Flame rows: white-hot tip down to the ember bed */
+  flame: string[];
+  /** The hues every scene and pixel emblem draws from */
+  spectrum: Spectrum;
 }
 
 export function galleryTheme(dark: boolean): GalleryTheme {
   return dark
     ? {
-        background: "#0d1117", inset: "#161f2b", border: "#293344",
-        text: "#e6edf3", muted: "#9caec4", accent: "#56e0bd",
-        accentSoft: "#132c2b", warm: "#fbc65b", cool: "#b6a0ff",
+        dark, background: "#0d1117", inset: "#161b22", border: "#262e3a",
+        text: "#e6edf3", muted: "#919dab", faint: "#55616f",
+        greens: ["#0e4429", "#006d32", "#26a641", "#39d353"],
+        lit: ["#7ee787", "#2ea043"],
+        flame: ["#fff3b8", "#ffe07a", "#ffc65a", "#ffa94d", "#ff8c42", "#f76f36", "#e2552b"],
+        spectrum: DARK_SPECTRUM,
       }
     : {
-        background: "#ffffff", inset: "#f2f6f7", border: "#dce5e8",
-        text: "#253640", muted: "#5d707c", accent: "#16765f",
-        accentSoft: "#edf7f3", warm: "#866526", cool: "#4d6f99",
+        dark, background: "#ffffff", inset: "#ebedf0", border: "#d8dee4",
+        text: "#1f2328", muted: "#59636e", faint: "#a3acb5",
+        greens: ["#9be9a8", "#40c463", "#30a14e", "#216e39"],
+        lit: ["#2da44e", "#1a7f37"],
+        flame: ["#eda100", "#ea8d09", "#e67a12", "#e06719", "#d6541e", "#c74321", "#b03520"],
+        spectrum: LIGHT_SPECTRUM,
       };
 }
 
@@ -38,40 +72,70 @@ export function numberSize(value: string, preferred: number, width: number): num
   return Math.min(preferred, width / (value.length * 0.63));
 }
 
-export function galleryCss(theme: GalleryTheme, font: NumeralFont = "mono"): string {
-  return `text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
-    .eyebrow{font-size:10px;font-weight:600;letter-spacing:1.7px;fill:${theme.muted}}
-    .heading{font-size:18px;font-weight:600;letter-spacing:-.4px;fill:${theme.text}}
-    .label{font-size:12px;fill:${theme.muted}}
-    .detail{font-size:10.5px;fill:${theme.muted}}
+/** The display face, subset to the letters of one card's titles */
+export function displayCss(subset: DisplaySubset): string {
+  return `@font-face{font-family:'Gallery ${display.family}';font-style:italic;font-weight:500;src:url(data:font/ttf;base64,${display.subsets[subset].data}) format('truetype')}
+    .title{font-family:'Gallery ${display.family}',ui-serif,Georgia,'Times New Roman',serif;font-style:italic;font-weight:500;font-size:22px;fill:currentColor}`;
+}
+
+/** Letters the embedded display subset can draw */
+export function displayGlyphs(subset: DisplaySubset): string {
+  return display.subsets[subset].text;
+}
+
+/**
+ * Copyright notices of every embedded font, followed by one copy of the
+ * SIL Open Font License they share.
+ */
+export function fontLicenses(font: NumeralFont): string {
+  const split = (license: string): [string, string] => {
+    const at = license.indexOf("\n\n");
+    return [license.slice(0, at), license.slice(at + 2)];
+  };
+  const licenses = [display.license, numeralLicense(font)].filter(Boolean).map(split);
+  return `${licenses.map((l) => l[0]).join("\n")}\n\n${licenses[0][1]}`;
+}
+
+export function galleryCss(theme: GalleryTheme, subset: DisplaySubset, font: NumeralFont = "mono"): string {
+  return `text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif;fill:${theme.text}}
+    ${displayCss(subset)}
+    .label{font-size:12px;font-weight:500}
+    .detail{font-size:11px;fill:${theme.muted}}
     ${numeralCss(font)}
-    .number{fill:${theme.text}}
-    .motion{animation:shimmer 7s ease-in-out infinite}
-    @keyframes shimmer{0%,100%{opacity:.65}50%{opacity:1}}
-    @media(prefers-reduced-motion:reduce){.motion{animation:none}}`;
+    .number{fill:${theme.text}}`;
 }
 
 export function cardSurface(width: number, height: number, theme: GalleryTheme): string {
   return `<rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="14" fill="${theme.background}" stroke="${theme.border}"/>`;
 }
 
-export function cardSvg(title: string, description: string, width: number, height: number,
-  theme: GalleryTheme, body: string, css = "", font: NumeralFont = "mono"): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title description" data-design="gallery-v2" data-numeral-font="${font}">
-  <title id="title">${escapeXml(title)}</title>
+export interface Card {
+  /** Accessible name and long description */
+  label: string;
+  description: string;
+  width: number;
+  height: number;
+  theme: GalleryTheme;
+  /** Which display subset the card's title is set in */
+  subset: DisplaySubset;
+  font?: NumeralFont;
+  css?: string;
+  body: string;
+}
+
+export function cardSvg({ label, description, width, height, theme, subset, font = "mono", css = "", body }: Card): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title description" color="${theme.text}" data-design="gallery-v6" data-numeral-font="${font}">
+  <title id="title">${escapeXml(label)}</title>
   <desc id="description">${escapeXml(description)}</desc>
-  ${font === "mono" ? "" : `<metadata id="font-license">${escapeXml(numeralLicense(font))}</metadata>`}
-  <style>${galleryCss(theme, font)}${css}</style>
+  <metadata id="font-license">${escapeXml(fontLicenses(font))}</metadata>
+  <style>${galleryCss(theme, subset, font)}${css}</style>
   ${cardSurface(width, height, theme)}
   ${body}
 </svg>\n`;
 }
 
-/** A quiet echo of the contribution graph, used as the gallery signature. */
-export function pixelMark(x: number, y: number, theme: GalleryTheme): string {
-  return [2, 3, 1, 4].map((height, col) =>
-    Array.from({ length: height }, (_, row) =>
-      `<rect x="${x + col * 7}" y="${y + (3 - row) * 7}" width="4.5" height="4.5" rx="1.2" fill="${theme.accent}" opacity="${0.4 + row * 0.18}"/>`
-    ).join("")
-  ).join("");
+/** A card's heading row: the title, and one quiet line saying what is measured */
+export function cardHeader(title: string, note: string, width: number): string {
+  return `<text class="title" x="${PAD}" y="41">${escapeXml(title)}</text>
+    <text class="detail" x="${width - PAD}" y="40" text-anchor="end">${escapeXml(note)}</text>`;
 }
